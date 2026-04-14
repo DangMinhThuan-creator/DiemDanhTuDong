@@ -15,6 +15,7 @@ Chạy độc lập:
 import cv2
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from config import (
@@ -29,23 +30,23 @@ from face_detector import draw_header
 
 
 # ============================================================
-# ĐĂNG KÝ TỪ WEBCAM
+# ĐĂNG KÝ TỪ WEBCAM (TỰ ĐỘNG CHỤP)
 # ============================================================
 def register_from_webcam(member_id: str, name: str,
-                         num_captures: int = DEFAULT_CAPTURE_COUNT) -> bool:
+                         num_captures: int = 200) -> bool:  # CHANGED: 200 ảnh
     """
-    Mở webcam và chụp nhiều ảnh khuôn mặt để đăng ký.
+    Mở webcam và tự động chụp ảnh khuôn mặt để đăng ký.
 
-    Hướng dẫn khi chụp:
-      - Nhìn thẳng vào camera
-      - Xoay đầu nhẹ sang trái/phải/trên/dưới giữa các lần chụp
-      - Nhấn SPACE khi khuôn mặt nằm trong khung xanh
-      - Nhấn Q để huỷ
+    Tính năng mới:
+      - Tự động chụp liên tục khi phát hiện 1 khuôn mặt
+      - Dừng ngay khi phát hiện khuôn mặt thứ 2
+      - Giới hạn tối đa 200 ảnh
+      - Nhấn Q để dừng bất cứ lúc nào
 
     Args:
         member_id   : Mã thành viên (VD: "SV001")
         name        : Họ và tên
-        num_captures: Số ảnh cần chụp
+        num_captures: Số ảnh tối đa (mặc định 200)
 
     Returns:
         True nếu đăng ký thành công (lưu được ít nhất 1 ảnh).
@@ -56,8 +57,10 @@ def register_from_webcam(member_id: str, name: str,
     member_dir.mkdir(exist_ok=True)
 
     print(f"\n[*] Dang ky khuon mat: {name}  (ID: {member_id})")
-    print(f"    Can chup {num_captures} anh — hay nhin vao camera.")
-    print("    SPACE: chup anh  |  Q: huy\n")
+    print(f"    Tu dong chup toi da {num_captures} anh")
+    print("    Hay nhin vao camera va xoay dau nhe sang cac huong khac nhau")
+    print("    SE DUNG neu phat hien khuon mat thu 2!")
+    print("    Q: dung truoc\n")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -69,6 +72,8 @@ def register_from_webcam(member_id: str, name: str,
     )
 
     saved = 0
+    last_capture_time = 0
+    capture_interval = 0.1  # CHANGED: Chụp mỗi 0.1 giây (10 ảnh/giây)
 
     while saved < num_captures:
         ret, frame = cap.read()
@@ -79,28 +84,61 @@ def register_from_webcam(member_id: str, name: str,
         gray    = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces   = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(80, 80))
 
+        # CHANGED: Kiểm tra số lượng khuôn mặt
+        num_faces = len(faces)
+        
+        # Vẽ khung cho tất cả khuôn mặt
         for (x, y, w, h) in faces:
-            cv2.rectangle(display, (x, y), (x + w, y + h), COLOR_SUCCESS, 2)
+            # Khuôn mặt đầu tiên: màu xanh (OK)
+            # Khuôn mặt thứ 2 trở đi: màu đỏ (CẢNH BÁO)
+            color = COLOR_SUCCESS if len(faces) == 1 else (0, 0, 255)
+            cv2.rectangle(display, (x, y), (x + w, y + h), color, 2)
 
-        draw_header(display,
-                    f"Dang ky: {name}  |  Da chup: {saved}/{num_captures}")
-        cv2.putText(display,
-                    "SPACE: Chup  |  Q: Huy",
-                    (10, display.shape[0] - 14),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, COLOR_INFO, 2)
-        cv2.imshow("Dang Ky Khuon Mat", display)
+        # CHANGED: Cảnh báo nếu phát hiện nhiều hơn 1 khuôn mặt
+        if num_faces > 1:
+            cap.release()
+            cv2.destroyAllWindows()
+            print(f"\n[!] DUNG! Phat hien {num_faces} khuon mat trong khung hinh.")
+            print(f"    Dang ky ket thuc voi {saved} anh.\n")
+            if saved > 0:
+                add_member(member_id, name, image_count=saved)
+                print(f"[OK] Dang ky thanh cong: {name} ({member_id}) — {saved} anh\n")
+                return True
+            else:
+                print("[LOI] Chua luu duoc anh nao.")
+                return False
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord(" "):
-            if len(faces) == 0:
-                print("  [!] Chua phat hien khuon mat — hay dieu chinh vi tri.")
-                continue
+        # CHANGED: Tự động chụp nếu phát hiện đúng 1 khuôn mặt
+        current_time = time.time()
+        if num_faces == 1 and (current_time - last_capture_time) >= capture_interval:
             saved += 1
             fname = member_dir / f"face_{saved:04d}.jpg"
             cv2.imwrite(str(fname), frame)
-            print(f"  [+] Luu anh {saved}/{num_captures}: {fname.name}")
-        elif key == ord("q"):
-            print("  [!] Da huy dang ky.")
+            last_capture_time = current_time
+            
+            # Hiển thị tiến độ mỗi 10 ảnh
+            if saved % 10 == 0:
+                print(f"  [+] Da chup: {saved}/{num_captures} anh")
+
+        # Hiển thị thông tin
+        status_text = f"Dang ky: {name}  |  Da chup: {saved}/{num_captures}"
+        if num_faces == 0:
+            status_text += "  |  [Chua phat hien khuon mat]"
+        elif num_faces == 1:
+            status_text += "  |  [Dang chup...]"
+        
+        draw_header(display, status_text)
+        
+        cv2.putText(display,
+                    "Q: Dung  |  Tu dong chup khi co 1 khuon mat",
+                    (10, display.shape[0] - 14),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_INFO, 2)
+        
+        cv2.imshow("Dang Ky Khuon Mat", display)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            print(f"\n  [!] Da dung thu cong. Luu duoc {saved} anh.")
             break
 
     cap.release()
@@ -169,7 +207,7 @@ def register_from_images(member_id: str, name: str,
 # ============================================================
 def register_member(member_id: str, name: str,
                     image_source=None,
-                    num_captures: int = DEFAULT_CAPTURE_COUNT) -> bool:
+                    num_captures: int = 200) -> bool:  # CHANGED: Mặc định 200
     """
     Đăng ký thành viên — tự chọn phương thức phù hợp.
 
@@ -179,7 +217,7 @@ def register_member(member_id: str, name: str,
         image_source : None       → webcam
                        str        → 1 file ảnh
                        list[str]  → nhiều file ảnh
-        num_captures : Số ảnh chụp webcam (chỉ dùng khi image_source=None)
+        num_captures : Số ảnh chụp webcam (mặc định 200)
 
     Returns:
         True nếu đăng ký thành công.

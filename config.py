@@ -39,7 +39,7 @@ DISTANCE_METRIC = "cosine"
 # Ngưỡng nhận diện (0.0 – 1.0):
 #   Giá trị thấp hơn = chặt hơn, ít nhầm hơn nhưng dễ bỏ sót
 #   Giá trị cao hơn  = dễ nhận hơn, có thể nhầm người
-THRESHOLD = 0.40
+THRESHOLD = 0.68
 
 # Thời gian chờ giữa 2 lần điểm danh cùng 1 người (giây)
 COOLDOWN_SEC = 5

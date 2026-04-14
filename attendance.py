@@ -67,12 +67,12 @@ def run_attendance(session_name: str = None,
     csv_fh = open(csv_file, "a", newline="", encoding="utf-8")
     writer = csv.writer(csv_fh)
     if not csv_file.stat().st_size if csv_file.exists() else True:
-        writer.writerow(["member_id", "name", "time", "session"])
+        writer.writerow(["member_id", "name"])
 
     # --- Mở webcam ---
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    # cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     if not cap.isOpened():
         print("[LOI] Khong mo duoc webcam.")
@@ -96,7 +96,7 @@ def run_attendance(session_name: str = None,
         display    = frame.copy()
 
         # --- Nhận diện mỗi 15 frame (~2 lần/giây) ---
-        if frame_idx % 15 == 0:
+        if frame_idx % 30 == 0:
             matches = recognize_faces(frame)
 
             if matches:
