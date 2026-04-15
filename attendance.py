@@ -63,11 +63,12 @@ def run_attendance(session_name: str = None,
     attended   = _load_existing_attendance(csv_file)  # Nạp lại nếu đã có
     last_seen  = {}   # {member_id: datetime} — chống điểm danh lặp
 
+    # --- Kiểm tra & sửa header CSV trước khi mở append ---
+    _ensure_csv_header(csv_file)
+
     # --- Mở file CSV ---
     csv_fh = open(csv_file, "a", newline="", encoding="utf-8")
     writer = csv.writer(csv_fh)
-    if not csv_file.stat().st_size if csv_file.exists() else True:
-        writer.writerow(["member_id", "name"])
 
     # --- Mở webcam ---
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -167,13 +168,56 @@ def run_attendance(session_name: str = None,
 # ============================================================
 # HÀM HỖ TRỢ NỘI BỘ
 # ============================================================
+def _ensure_csv_header(csv_file: Path):
+    """
+    Đảm bảo file CSV có header đúng với 4 cột: member_id, name, time, session.
+    - Nếu file chưa tồn tại hoặc rỗng → tạo mới với header.
+    - Nếu file cũ chỉ có header 2 cột (member_id, name) → migrate sang 4 cột.
+    """
+    HEADER = ["member_id", "name", "time", "session"]
+
+    if not csv_file.exists() or csv_file.stat().st_size == 0:
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow(HEADER)
+        return
+
+    # Đọc header hiện tại
+    with open(csv_file, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        try:
+            existing_header = next(reader)
+        except StopIteration:
+            existing_header = []
+
+    # Nếu đã có đủ cột time → không cần làm gì
+    if "time" in existing_header or "Time" in existing_header:
+        return
+
+    # Header cũ thiếu cột time → migrate: đọc toàn bộ, ghi lại với header mới
+    print(f"[migrate] File CSV cu thieu cot 'time', dang tu dong sua: {csv_file.name}")
+    with open(csv_file, "r", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(HEADER)
+        for row in rows:
+            writer.writerow([
+                row.get("member_id", ""),
+                row.get("name", ""),
+                row.get("time") or row.get("Time") or row.get("time_str") or "N/A",
+                row.get("session", ""),
+            ])
+    print(f"[migrate] Xong. Da sua {len(rows)} ban ghi.")
+
+
 def _load_existing_attendance(csv_file: Path) -> dict:
     """Nạp lại bản ghi từ file CSV nếu đã tồn tại (tiếp tục phiên cũ)."""
     attended = {}
     if csv_file.exists():
         with open(csv_file, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                attended[row["member_id"]] = row["time"]
+                attended[row.get("member_id")] = row.get("time") or row.get("Time") or "N/A"
     return attended
 
 

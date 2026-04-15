@@ -42,7 +42,7 @@ def get_session_data(session_name: str) -> tuple[dict, dict]:
     if csv_file.exists():
         with open(csv_file, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                attended[row["member_id"]] = row["time"]
+                attended[row["member_id"]] = row.get("time") or row.get("Time") or row.get("time_str") or "N/A"
 
     return attended, members
 
